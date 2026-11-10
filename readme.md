@@ -14,7 +14,7 @@ Server respondar
 
 {
     Status:"Ok",
-    file_hash:str (hex),
+    file_hash:[u8;32],
 }
 
 om den fick emot filen
@@ -34,7 +34,8 @@ om den fick emot filen
 Server svarar
 
 {
-    hash_vec:list(str)
+    hash_vec:list([u8;32])
+    tree_side:list(bool)
 }
 
 #Om clienten vill få emot fil data
