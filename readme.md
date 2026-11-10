@@ -1,0 +1,54 @@
+Tcp protokoll:
+
+#Om client vill skicka över data skickar den json object
+
+{
+    type:"send",
+    file_id:str,
+    file_length:int
+}
+
+Clienten skickar sedan filen som byte data
+
+Server respondar
+
+{
+    Status:"Ok",
+    file_hash:str (hex),
+}
+
+om den fick emot filen
+
+{
+    Status:"Failure"
+}
+
+
+#Om client vill kolla om filen med file_id är korrekt
+
+{
+    type:"check",
+    file_id:file_id
+}
+
+Server svarar
+
+{
+    hash_vec:list(str)
+}
+
+#Om clienten vill få emot fil data
+
+{
+    type:"recieve",
+    file_id:file_id
+}
+
+om servern accepterar svarar den
+
+{
+    status:"OK",
+    file_length:int
+}
+
+sen skickar servern fil datan
