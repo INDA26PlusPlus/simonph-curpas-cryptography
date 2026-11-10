@@ -24,7 +24,7 @@ om den fick emot filen
 }
 
 
-#Om client vill kolla om filen med file_id är korrekt
+#Om client vill kolla om filen med file_id är lagrad
 
 {
     type:"check",
@@ -49,7 +49,5 @@ om servern accepterar svarar den
 
 {
     status:"OK",
-    file_length:int
+    data:Vec<u8>
 }
-
-sen skickar servern fil datan

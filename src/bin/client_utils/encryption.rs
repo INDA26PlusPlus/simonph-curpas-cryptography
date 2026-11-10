@@ -1,9 +1,8 @@
 use rand::random;
 use sha2::{Sha256, Digest};
-use argon2::{Algorithm::Argon2d, Argon2};
 use aes_gcm::{
     aead::{Aead, KeyInit},
-    Aes256Gcm, Nonce
+    Aes256Gcm
 };
 use std::fs;
 use crate::client_utils::client_file::ClientFile;
@@ -55,7 +54,9 @@ pub fn hash_file(data:&Vec<u8>)->Result<[u8;32], String>{
     hasher.update(data);
     return Ok(hasher.finalize().into());
 }
-pub fn create_encrytion(file_id:&str, file_name:&str)->Result<(ClientFile,Vec<u8>), String>{
+pub fn create_encrytion(file_name:&str)->Result<(ClientFile,Vec<u8>), String>{
+    let id:u64 = random();
+    let file_id = format!("{:x}",id);
     let mut nonce = [0u8;12];
     for x in nonce.iter_mut(){
         *x = random();
@@ -77,9 +78,6 @@ pub fn decrypt_file(file:&ClientFile,ciphertext:&Vec<u8>)->Result<Vec<u8>, Strin
         return Err("hash missmatch".to_string());
     }
     return Ok(plaintext);
-}
-pub fn send_server_data(file_name:&str){
-    
 }
 
 
