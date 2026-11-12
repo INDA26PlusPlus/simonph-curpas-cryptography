@@ -6,11 +6,11 @@ use aes_gcm::{
 };
 use std::fs;
 use crate::client_utils::client_file::ClientFile;
-pub fn check_correctnes(hash_arr:Vec<[u8;32]>,merge_side:Vec<bool>,root_hash:[u8;32])->bool{
-    let mut curhash = hash_arr[0];
-    for i in 1..hash_arr.len(){
+pub fn get_root_with_merge(hash_arr:&Vec<[u8;32]>,merge_side:&Vec<bool>,start_hash:[u8;32])->[u8;32]{
+    let mut curhash=start_hash;
+    for i in 0..hash_arr.len(){
         let cur = hash_arr[i];
-        let (l,r) = match merge_side[i-1]{
+        let (l,r) = match merge_side[i]{
             true => (curhash,cur),
             false => (cur,curhash)
         };
@@ -19,7 +19,7 @@ pub fn check_correctnes(hash_arr:Vec<[u8;32]>,merge_side:Vec<bool>,root_hash:[u8
         hasher.update(r);
         curhash = hasher.finalize().into()
     }
-    return curhash == root_hash;
+    return curhash
 }
 
 pub fn make_user_get_key(salt:&[u8;12])->Result<[u8;32],String>{
@@ -54,9 +54,7 @@ pub fn hash_file(data:&Vec<u8>)->Result<[u8;32], String>{
     hasher.update(data);
     return Ok(hasher.finalize().into());
 }
-pub fn create_encrytion(file_name:&str)->Result<(ClientFile,Vec<u8>), String>{
-    let id:u64 = random();
-    let file_id = format!("{:x}",id);
+pub fn create_encrytion(file_name:&str)->Result<ClientFile, String>{
     let mut nonce = [0u8;12];
     for x in nonce.iter_mut(){
         *x = random();
@@ -67,16 +65,12 @@ pub fn create_encrytion(file_name:&str)->Result<(ClientFile,Vec<u8>), String>{
     }
     let key = make_user_get_key(&salt)?;
     let data = fs::read(file_name).unwrap();
-    let hash = hash_file(&data)?;
     let cipher_text = encrypt(&data, &key, &nonce)?;
-    return Ok((ClientFile{file_id:file_id.to_string(),file_hash:hash,nonce,salt},cipher_text));
+    return Ok(ClientFile{file_id:file_name.to_string(),nonce,salt,data:cipher_text});
 }
-pub fn decrypt_file(file:&ClientFile,ciphertext:&Vec<u8>)->Result<Vec<u8>, String>{
+pub fn decrypt_file(file:&ClientFile)->Result<Vec<u8>, String>{
     let key = make_user_get_key(&file.salt)?;
-    let plaintext = decrypt(ciphertext, &key, &file.nonce)?;
-    if file.file_hash != hash_file(&plaintext)?{
-        return Err("hash missmatch".to_string());
-    }
+    let plaintext = decrypt(&file.data, &key, &file.nonce)?;
     return Ok(plaintext);
 }
 

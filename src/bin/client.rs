@@ -7,28 +7,18 @@ use std::fs::{self, File};
 use simonph_curpas_cryptography::tcpmessage::{self, TcpMessage, recieve_message};
 use simonph_curpas_cryptography::tcpmessage::send_message;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
-
+use crate::client_utils::encryption::{hash_file};
 use crate::client_utils::encryption::decrypt_file;
+use crate::client_utils::encryption::get_root_with_merge;
+use crate::client_utils::client_file::ClientFile;
 
-
-
-async fn send_file(file_name:&str,stream:&mut Framed<TcpStream,LengthDelimitedCodec>)->Result<(),String>{
+fn update_root(hash_list:&Vec<[u8;32]>, tree_side:&Vec<bool>,file_hash:[u8;32])->Result<(),String>{
     let data_file = File::open(CLIENTDATALOC).map_err(|e| e.to_string())?;
     let mut data_base:ClientData = serde_json::from_reader(data_file).map_err(|e| e.to_string())?;
-    let (file_data, data) = client_utils::encryption::create_encrytion(file_name)?;
-    let message = TcpMessage{
-        status:None,
-        message_type:Some(tcpmessage::MessageType::Send),
-        file_id:Some(file_data.file_id.clone()),
-        data:Some(data),
-        hash_list:None,
-        tree_side:None
-    };
-    send_message(&message, stream).await?;
-    let response = recieve_message(stream).await?;
-    if let Some(tcpmessage::Status::Ok) = response.status {} else {return Err("server did not recieve data".to_string())}
-
-    data_base.name_data.insert(file_name.to_string(), file_data);
+    if get_root_with_merge(hash_list, tree_side,[0u8;32]) != data_base.root_hash{
+        return Err("root hash is not correct".to_string());
+    }
+    data_base.root_hash = get_root_with_merge(hash_list, tree_side, file_hash);
     serde_json::to_writer(
         File::create(CLIENTDATALOC).map_err(|e| e.to_string())?,
         &data_base
@@ -36,17 +26,31 @@ async fn send_file(file_name:&str,stream:&mut Framed<TcpStream,LengthDelimitedCo
     return Ok(());
 }
 
-async fn recieve_file(file_name:&str,stream:&mut Framed<TcpStream,LengthDelimitedCodec>)->Result<(),String>{
-    let data_file = File::open(CLIENTDATALOC).map_err(|e| e.to_string())?;
-    let data:ClientData = serde_json::from_reader(data_file).map_err(|e| e.to_string())?;
-    let file_data = match data.name_data.get(file_name){
-        Some(v) => v,
-        None => return Err(format!("cant find the file {}",file_name))
+async fn send_file(file_name:&str,stream:&mut Framed<TcpStream,LengthDelimitedCodec>)->Result<(),String>{
+    let file_data = client_utils::encryption::create_encrytion(file_name)?;
+    let data = serde_json::ser::to_vec(&file_data).map_err(|e| e.to_string())?;
+    let message = TcpMessage{
+        status:None,
+        message_type:Some(tcpmessage::MessageType::Send),
+        file_id:Some(file_data.file_id.clone()),
+        data:Some(data.clone()),
+        hash_list:None,
+        tree_side:None
     };
+    send_message(&message, stream).await?;
+    let response = recieve_message(stream).await?;
+    let hash_list = response.hash_list.ok_or("Server did not send hash")?;
+    let tree_side = response.tree_side.ok_or("server did not have tree side")?;
+    update_root(&hash_list,&tree_side,hash_file(&data)?)?;
+    if let Some(tcpmessage::Status::Ok) = response.status {} else {return Err("server did not recieve data".to_string())}
+    return Ok(());
+}
+
+async fn recieve_file(file_name:&str,stream:&mut Framed<TcpStream,LengthDelimitedCodec>)->Result<(),String>{
     let message = tcpmessage::TcpMessage{
         status:None,
         message_type:Some(tcpmessage::MessageType::Retrieve),
-        file_id:Some(file_data.file_id.clone()),
+        file_id:Some(file_name.to_string()),
         data:None,
         hash_list:None,
         tree_side:None,
@@ -54,27 +58,25 @@ async fn recieve_file(file_name:&str,stream:&mut Framed<TcpStream,LengthDelimite
     send_message(&message, stream).await?;
     let response = recieve_message(stream).await?;
     let data_opt = match response.status{Some(tcpmessage::Status::Ok) => response.data, _ => return Err("no data sent".to_string())};
-    let ciphertext = match data_opt{
+    let data = match data_opt{
         Some(v) => v,
         None => return Err("no data field sent from server".to_string())
     };
-    let plaintext = decrypt_file(file_data, &ciphertext)?;
+    let file_data:ClientFile = serde_json::from_slice(&data).map_err(|e| e.to_string())?;
+    let hash_list = response.hash_list.ok_or("Server did not send hash")?;
+    let tree_side = response.tree_side.ok_or("server did not have tree side")?;
+    update_root(&hash_list,&tree_side,hash_file(&data)?)?;
+    let plaintext = decrypt_file(&file_data)?;
     fs::write(file_name, plaintext).map_err(|e| e.to_string())?;
     println!("file loaded to directory");
     return Ok(())
 }
 
-async fn check_correctnes(file_name:&str,stream:&mut Framed<TcpStream,LengthDelimitedCodec>)->Result<(),String>{
-    let data_file = File::open(CLIENTDATALOC).map_err(|e| e.to_string())?;
-    let data:ClientData = serde_json::from_reader(data_file).map_err(|e| e.to_string())?;
-    let file_data = match data.name_data.get(file_name){
-        Some(v) => v,
-        None => return Err(format!("cant find the file {}",file_name))
-    };
+async fn check(file_name:&str,stream:&mut Framed<TcpStream,LengthDelimitedCodec>)->Result<(),String>{
     let message = TcpMessage{
         status:None,
         message_type:Some(tcpmessage::MessageType::Check),
-        file_id:Some(file_data.file_id.clone()),
+        file_id:Some(file_name.to_string()),
         data:None,
         hash_list:None,
         tree_side:None,
@@ -82,20 +84,7 @@ async fn check_correctnes(file_name:&str,stream:&mut Framed<TcpStream,LengthDeli
     send_message(&message, stream).await?;
     let response = recieve_message(stream).await?;
     if let Some(tcpmessage::Status::Ok) = response.status {} else {return Err("server rejected check response".to_string())}
-    let hash_arr = match response.hash_list{
-        Some(v) => v,
-        None => return Err("no hashlist provided by server".to_string())
-    };
-    let tree_side = match response.tree_side{
-        Some(v) => v,
-        None => return Err("no tree side list provided by server".to_string())
-    };
-    if client_utils::encryption::check_correctnes(hash_arr, tree_side, data.root_hash) == false{
-        println!("server data is incorrect");
-    }
-    else{
-        println!("server data is correct");
-    }
+    println!("all went well :)");
     return Ok(());
 }
 
@@ -120,7 +109,7 @@ async fn main(){
                 match parts[0]{
                     "1" => send_file(parts[1],&mut framed).await.unwrap(),
                     "2" => recieve_file(parts[1],&mut framed).await.unwrap(),
-                    "3" => check_correctnes(parts[1], &mut framed).await.unwrap(),
+                    "3" => check(parts[1], &mut framed).await.unwrap(),
                     _ => println!("{} is not a valid command for length 2",parts[0])
                 }
             },
