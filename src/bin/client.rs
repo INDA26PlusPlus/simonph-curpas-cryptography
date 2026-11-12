@@ -1,16 +1,13 @@
 use std::io::{self};
 use tokio::net::{TcpStream};
+use std::fs::{self, File};
+use simonph_curpas_cryptography::tcpmessage::{self, TcpMessage, recieve_message,send_message};
 mod client_utils;
 use client_utils::client_data::ClientData;
 use client_utils::CLIENTDATALOC;
-use std::fs::{self, File};
-use simonph_curpas_cryptography::tcpmessage::{self, TcpMessage, recieve_message};
-use simonph_curpas_cryptography::tcpmessage::send_message;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use crate::client_utils::encryption::{hash_file};
-use crate::client_utils::encryption::decrypt_file;
-use crate::client_utils::encryption::get_root_with_merge;
-use crate::client_utils::client_file::ClientFile;
+use client_utils::encryption::{hash_file,decrypt_file,get_root_with_merge};
+use client_utils::client_file::ClientFile;
 
 fn update_root(hash_list:&Vec<[u8;32]>, tree_side:&Vec<bool>,file_hash:[u8;32])->Result<(),String>{
     let data_file = File::open(CLIENTDATALOC).map_err(|e| e.to_string())?;
@@ -57,11 +54,10 @@ async fn recieve_file(file_name:&str,stream:&mut Framed<TcpStream,LengthDelimite
     };
     send_message(&message, stream).await?;
     let response = recieve_message(stream).await?;
-    let data_opt = match response.status{Some(tcpmessage::Status::Ok) => response.data, _ => return Err("no data sent".to_string())};
-    let data = match data_opt{
-        Some(v) => v,
-        None => return Err("no data field sent from server".to_string())
-    };
+    if let Some(tcpmessage::Status::Reject) = response.status{
+        return Err("server rejected".to_string());
+    }
+    let data = response.data.ok_or("data not sent")?;
     let file_data:ClientFile = serde_json::from_slice(&data).map_err(|e| e.to_string())?;
     let hash_list = response.hash_list.ok_or("Server did not send hash")?;
     let tree_side = response.tree_side.ok_or("server did not have tree side")?;
