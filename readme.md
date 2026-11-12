@@ -1,53 +1,67 @@
 Tcp protokoll:
 
-#Om client vill skicka över data skickar den json object
+# Client sends data
 
+```
 {
     type:"send",
     file_id:str,
-    file_length:int
+    ser_data:Vec<u8>
 }
+```
 
-Clienten skickar sedan filen som byte data
+Server response if it added the file successfully
 
-Server respondar
-
+```
 {
-    Status:"Ok",
-    file_hash:[u8;32],
+    status:"ok",
+    mask:Vec<[u8;32]>,
+    sides:Vec<bool>
 }
+```
 
-om den fick emot filen
+# Client polls data
 
-{
-    Status:"Failure"
-}
-
-
-#Om client vill kolla om filen med file_id är lagrad
-
+```
 {
     type:"check",
-    file_id:file_id
+    file_id:str
 }
+```
 
-Server svarar
+Server response if the file exists
 
+```
 {
-    hash_vec:list([u8;32])
-    tree_side:list(bool)
+    status:"ok"
 }
+```
 
-#Om clienten vill få emot fil data
+# Client gets data
 
+```
 {
     type:"recieve",
-    file_id:file_id
+    file_id:str
 }
+```
 
-om servern accepterar svarar den
+Server response if it found the file data successfully
 
+```
 {
-    status:"OK",
-    data:Vec<u8>
+    status:"ok",
+    ser_data:Vec<u8>,
+    mask:Vec<[u8;32]>,
+    sides:Vec<bool>
 }
+```
+
+# If the server fails any process, it instead responds with
+
+```
+{
+    status:"failure",
+    message:str
+}
+```
