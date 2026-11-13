@@ -8,19 +8,56 @@ use client_utils::CLIENTDATALOC;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use client_utils::encryption::{hash_file,decrypt_file,get_root_with_merge};
 use client_utils::client_file::ClientFile;
+use sha2::{Digest, Sha256};
+
+// I couldn't decrypt what you were trying to do with the root, so I'm just reimplementing it
+
+/// Initialize the root
+fn base_root() -> [u8; 32] {
+    let mut cur = [0u8; 32];
+    for _ in 0..10 {
+        let mut h = Sha256::new();
+        h.update(cur);
+        h.update(cur);
+        cur = h.finalize().into();
+    }
+    cur
+}
+
+fn load_root() -> Result<ClientData, String> {
+    match File::open(CLIENTDATALOC) {
+        Ok(f) => serde_json::from_reader(f).map_err(|e| e.to_string()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let data = ClientData { root_hash: base_root() };
+            save_root(&data)?;
+            Ok(data)
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+fn save_root(data: &ClientData) -> Result<(), String> {
+    let tmp = format!("{}.tmp", CLIENTDATALOC);
+    let f = File::create(&tmp).map_err(|e| e.to_string())?;
+    serde_json::to_writer(f, data).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, CLIENTDATALOC).map_err(|e| e.to_string())
+}
 
 fn update_root(hash_list:&Vec<[u8;32]>, tree_side:&Vec<bool>,file_hash:[u8;32])->Result<(),String>{
-    let data_file = File::open(CLIENTDATALOC).map_err(|e| e.to_string())?;
-    let mut data_base:ClientData = serde_json::from_reader(data_file).map_err(|e| e.to_string())?;
-    if get_root_with_merge(hash_list, tree_side,[0u8;32]) != data_base.root_hash{
+    let mut db = load_root()?;
+    if get_root_with_merge(hash_list, tree_side, [0u8; 32]) != db.root_hash {
         return Err("root hash is not correct".to_string());
     }
-    data_base.root_hash = get_root_with_merge(hash_list, tree_side, file_hash);
-    serde_json::to_writer(
-        File::create(CLIENTDATALOC).map_err(|e| e.to_string())?,
-        &data_base
-    ).map_err(|e| e.to_string())?;
-    return Ok(());
+    db.root_hash = get_root_with_merge(hash_list, tree_side, file_hash);
+    save_root(&db)
+}
+
+fn check_root(hash_list: &Vec<[u8; 32]>, tree_side: &Vec<bool>, file_hash: [u8; 32]) -> Result<(), String> {
+    let db = load_root()?;
+    if get_root_with_merge(hash_list, tree_side, file_hash) != db.root_hash {
+        return Err("file failed integrity check against stored root".to_string());
+    }
+    Ok(())
 }
 
 async fn send_file(file_name:&str,stream:&mut Framed<TcpStream,LengthDelimitedCodec>)->Result<(),String>{
@@ -61,7 +98,7 @@ async fn recieve_file(file_name:&str,stream:&mut Framed<TcpStream,LengthDelimite
     let file_data:ClientFile = serde_json::from_slice(&data).map_err(|e| e.to_string())?;
     let hash_list = response.hash_list.ok_or("Server did not send hash")?;
     let tree_side = response.tree_side.ok_or("server did not have tree side")?;
-    update_root(&hash_list,&tree_side,hash_file(&data)?)?;
+    check_root(&hash_list, &tree_side, hash_file(&data)?)?;
     let plaintext = decrypt_file(&file_data)?;
     fs::write(file_name, plaintext).map_err(|e| e.to_string())?;
     println!("file loaded to directory");

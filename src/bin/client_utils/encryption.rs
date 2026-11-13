@@ -24,6 +24,7 @@ pub fn get_root_with_merge(hash_arr:&Vec<[u8;32]>,merge_side:&Vec<bool>,start_ha
 
 pub fn make_user_get_key(salt:&[u8;12])->Result<[u8;32],String>{
     let mut password = String::new();
+    println!("Provide password");
     std::io::stdin().read_line(&mut password).unwrap();
     let argon = argon2::Argon2::default();
     let mut key = [0u8;32];
