@@ -64,7 +64,7 @@ pub fn create_encrytion(file_name:&str)->Result<ClientFile, String>{
         *x = random();
     }
     let key = make_user_get_key(&salt)?;
-    let data = fs::read(file_name).unwrap();
+    let data = fs::read(file_name).map_err(|e| e.to_string())?;
     let cipher_text = encrypt(&data, &key, &nonce)?;
     return Ok(ClientFile{file_id:file_name.to_string(),nonce,salt,data:cipher_text});
 }

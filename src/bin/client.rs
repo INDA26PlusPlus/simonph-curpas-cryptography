@@ -98,7 +98,7 @@ async fn main(){
         println!("to check if a file is stored write 3 {{file_name}}");
         let mut input = String::new();
         io::stdin().read_line(&mut input).expect("read error");
-        let parts: Vec<&str> = input.split(" ").collect();
+        let parts: Vec<&str> = input.split_whitespace().collect();
         match parts.len(){
             1 => {if parts[0] == "0" {return}}
             2 => {
@@ -114,5 +114,4 @@ async fn main(){
             }
         }
     }
-
 }
